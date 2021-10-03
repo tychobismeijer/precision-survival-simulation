@@ -5,13 +5,14 @@ library(survival)
 
 set.seed(428361)
 
-n_experiments = 100
+n_experiments = 10
 
 n_high_risk <- 500
 n_low_risk <- 500
-x_diff_mean <- 0.1
+x_diff_mean <- 1.0
 x_sd <- 1.0
 lambda0 <- 1.0
+hazard_ratio <- 2.0
 
 n <- n_low_risk + n_high_risk
 
@@ -85,7 +86,7 @@ for (i in 1:n_experiments) {
     cohort <- tibble(.rows=n)
     cohort$risk_cat <- c(rep(0, n_low_risk), rep(1, n_high_risk))
     cohort$x <- rnorm(n, x_diff_mean*cohort$risk_cat, x_sd)
-    cohort$lambda <- lambda0 * exp(cohort$x)
+    cohort$lambda <- lambda0 * exp(log(hazard_ratio) * cohort$risk_cat)
 
     cohort$time_to_event <- rexp(n, cohort$lambda)
     cohort$follow_up_time <- runif(n, .1, .3)
