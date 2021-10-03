@@ -1,0 +1,4 @@
+*.Rds
+*.pdf
+.venv/
+
