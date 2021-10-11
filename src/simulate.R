@@ -18,9 +18,9 @@ hazard_ratio <- 5.0
 
 
 set.seed(428361)
-seeds <- map_int(seq(n_experiments), ~ sample(.Machine$integer.max/2, 1))
+seeds <- map_int(seq(n_experiments), ~ sample(.Machine$integer.max, 1))
 
-generate_cohort <- function() {
+generate_cohort_nkr_exp <- function() {
     months_per_year=12
     fu_up_to = 2011
 
@@ -108,7 +108,7 @@ coeff_l <- foreach(i=1:n_experiments) %dopar% {
     message("Experiment ", i)
     set.seed(seeds[i])
 
-    cohort <- generate_cohort()
+    cohort <- generate_cohort_nkr_exp()
     subcohort <- select_case_control(cohort)
 
     # Compute coefficients with different methods

@@ -1,0 +1,18 @@
+#!/usr/bin/env nextflow
+ 
+/*
+ * Run simulations
+ */
+process simulate {
+    publishDir "${workflow.projectDir}/reports/figures/"
+    
+    output:
+    file "coeff_estimates.pdf" into plot
+ 
+    input:
+    path script from "${workflow.projectDir}/src/simulate.R"
+ 
+    """
+    Rscript "$script"
+    """
+}

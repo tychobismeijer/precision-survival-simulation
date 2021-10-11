@@ -1,4 +1,5 @@
 *.Rds
 *.pdf
-.venv/
-
+/.venv/
+/.nextflow*
+work/
