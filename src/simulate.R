@@ -9,12 +9,13 @@ library(survival)
 
 registerDoMC(8)
 
-n_experiments = 10
+n_experiments = 100
 risk_group_proportion = 0.5
 x_diff_mean <- 1.0
 x_sd <- 0.5
 lambda0 <- 0.001175099 # per month
 hazard_ratio <- 5.0
+sample_prop <- 0.8 # Proportion of samples when subsampling
 
 
 set.seed(428361)
@@ -63,15 +64,36 @@ generate_cohort_nkr_exp <- function() {
     cohort
 }
 
-select_case_control <- function(cohort) {
-    matching <- matchit(
-        event ~ year,
-        data=cohort,
-        exact='year',
-        ratio=1)
-    subcohort_idx <- which(!is.na(matching$subclass))
-    subcohort <- cohort[subcohort_idx, ]
-    subcohort
+subsampling <- list(
+    case_control = function(cohort) {
+        matching <- matchit(
+            event ~ year,
+            data=cohort,
+            exact='year',
+            ratio=1)
+        subcohort_idx <- which(!is.na(matching$subclass))
+        cohort[subcohort_idx, ]
+    },
+    case_cohort = function(cohort) {
+        case_idx <- which(cohort$event)
+        control_idx <- which(!cohort$event)
+        sampled_control_idx <- if (length(case_idx) > length(control_idx)) {
+            control_idx
+        } else {
+            sample(control_idx, length(case_idx))
+        }
+        subcohort_idx <- c(case_idx, sampled_control_idx)
+        cohort[subcohort_idx, ]
+    })
+make_uniform_fun <- function (f) {
+    function (cohort) {
+        subcohort <- subsampling[[s]](cohort)
+        sample_idx <- sample(nrow(subcohort), floor(sample_prop*nrow(subcohort)))
+        subcohort[sample_idx, ]
+    }
+}
+for (s in names(subsampling)) {
+    subsampling[[paste0(s, '+uniform')]] <- make_uniform_fun(subsampling[[s]])
 }
 
 make_ncc_method <- function(f, ...) {
@@ -98,10 +120,27 @@ methods <- list(
     subcohort = function(subcohort, cohort) {
         coxph(Surv(time, event) ~ x, subcohort)
     },
+    naive = function(subcohort, cohort) {
+        subcohort$w <- ifelse(                                   
+            subcohort$event == 0,                                
+            sum(cohort$event == 0) / sum(subcohort$event == 0),
+            sum(cohort$event == 1) / sum(subcohort$event == 1))
+        coxph(Surv(time, event) ~ x, subcohort, weights=1/w)
+    },
     ncc_km = make_ncc_method(multipleNCC::KMprob, m=1),
     ncc_gam = make_ncc_method(multipleNCC::GAMprob),
     ncc_glm = make_ncc_method(multipleNCC::GLMprob)
 )
+
+parse_args <- function(args) {
+    arg_names <- c('subsampling', 'plots')
+    stopifnot(length(args) == length(arg_names))
+    args <- as.list(args)
+    names(args) <- arg_names
+    stopifnot(args$subsampling %in% names(subsampling))
+    args
+}
+args <- parse_args(commandArgs(T))
 
 
 coeff_l <- foreach(i=1:n_experiments) %dopar% {
@@ -109,7 +148,7 @@ coeff_l <- foreach(i=1:n_experiments) %dopar% {
     set.seed(seeds[i])
 
     cohort <- generate_cohort_nkr_exp()
-    subcohort <- select_case_control(cohort)
+    subcohort <- subsampling[[args$subsampling]](cohort)
 
     # Compute coefficients with different methods
     coeff <- list()
@@ -130,7 +169,7 @@ for (i in seq_along(coeff_l)) {
     }
 }
 
-pdf('coeff_estimates.pdf')
+pdf(args$plots)
 boxplot(coeff)
 abline(h=0.0, lty=2)
 abline(h=mean(coeff$cohort), lty=3)
