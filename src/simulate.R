@@ -61,6 +61,7 @@ generate_cohort_nkr_exp <- function() {
     cohort$event <- cohort$follow_up_time >= cohort$time_to_event
     cohort$sample <- seq(nrow(cohort))
 
+    cohort <- cohort[sample(nrow(cohort)), ]    
     cohort
 }
 
@@ -72,6 +73,7 @@ subsampling <- list(
             exact='year',
             ratio=1)
         subcohort_idx <- which(!is.na(matching$subclass))
+        stopifnot(length(subcohort_idx) == 2*sum(cohort$event))
         cohort[subcohort_idx, ]
     },
     case_cohort = function(cohort) {
@@ -82,7 +84,7 @@ subsampling <- list(
         } else {
             sample(control_idx, length(case_idx))
         }
-        subcohort_idx <- c(case_idx, sampled_control_idx)
+        subcohort_idx <- sample(c(case_idx, sampled_control_idx))
         cohort[subcohort_idx, ]
     })
 make_uniform_fun <- function (f) {
@@ -107,8 +109,8 @@ make_ncc_method <- function(f, ...) {
                 cohort$sampled & cohort$event == 1 ~ 2),
             ...)
         subcohort_idx <- match(subcohort$sample, cohort$sample)
-        subcohort$w <- cohort$sampling_p[subcohort_idx]
-        subcohort <- subcohort[subcohort$w > 0,]
+        subcohort$w <- 1/cohort$sampling_p[subcohort_idx]
+        subcohort <- subcohort[is.finite(subcohort$w) & subcohort$w > 0,]
         coxph(Surv(time, event) ~ x, subcohort, weights=w)
     }
 }
@@ -125,7 +127,7 @@ methods <- list(
             subcohort$event == 0,                                
             sum(cohort$event == 0) / sum(subcohort$event == 0),
             sum(cohort$event == 1) / sum(subcohort$event == 1))
-        coxph(Surv(time, event) ~ x, subcohort, weights=1/w)
+        coxph(Surv(time, event) ~ x, subcohort, weights=w)
     },
     ncc_km = make_ncc_method(multipleNCC::KMprob, m=1),
     ncc_gam = make_ncc_method(multipleNCC::GAMprob),
