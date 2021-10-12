@@ -5,9 +5,8 @@ library(ggplot2)
 library(MatchIt)
 requireNamespace('multipleNCC')
 library(purrr)
+library(stringr)
 library(survival)
-
-registerDoMC(8)
 
 n_experiments = 100
 risk_group_proportion = 0.5
@@ -16,6 +15,8 @@ x_sd <- 0.5
 lambda0 <- 0.001175099 # per month
 hazard_ratio <- 5.0
 sample_prop <- 0.8 # Proportion of samples when subsampling
+
+registerDoMC(4)
 
 
 set.seed(428361)
@@ -86,17 +87,11 @@ subsampling <- list(
         }
         subcohort_idx <- sample(c(case_idx, sampled_control_idx))
         cohort[subcohort_idx, ]
+    },
+    uniform = function(cohort) {
+        sample_idx <- sample(nrow(cohort), floor(sample_prop*nrow(cohort)))
+        cohort[sample_idx, ]
     })
-make_uniform_fun <- function (f) {
-    function (cohort) {
-        subcohort <- subsampling[[s]](cohort)
-        sample_idx <- sample(nrow(subcohort), floor(sample_prop*nrow(subcohort)))
-        subcohort[sample_idx, ]
-    }
-}
-for (s in names(subsampling)) {
-    subsampling[[paste0(s, '+uniform')]] <- make_uniform_fun(subsampling[[s]])
-}
 
 make_ncc_method <- function(f, ...) {
     function(subcohort, cohort) {
@@ -134,11 +129,30 @@ methods <- list(
     ncc_glm = make_ncc_method(multipleNCC::GLMprob)
 )
 
+run_experiment <- function(subsampling_methods) {
+    cohort <- generate_cohort_nkr_exp()
+
+    subcohort <- cohort
+    for (ss in subsampling_methods) {
+        subcohort <- subsampling[[ss]](subcohort)
+    }
+
+    # Compute coefficients with different methods
+    coeff <- list()
+    for (method in names(methods)) {
+        model <- methods[[method]](subcohort, cohort)
+        coeff[[method]] <- model$coefficients[1]
+    }
+    coeff
+}
+
 parse_args <- function(args) {
     arg_names <- c('subsampling', 'plots')
     stopifnot(length(args) == length(arg_names))
     args <- as.list(args)
     names(args) <- arg_names
+
+    args$subsampling <- str_split(args$subsampling, '\\+')[[1]]
     stopifnot(args$subsampling %in% names(subsampling))
     args
 }
@@ -148,17 +162,7 @@ args <- parse_args(commandArgs(T))
 coeff_l <- foreach(i=1:n_experiments) %dopar% {
     message("Experiment ", i)
     set.seed(seeds[i])
-
-    cohort <- generate_cohort_nkr_exp()
-    subcohort <- subsampling[[args$subsampling]](cohort)
-
-    # Compute coefficients with different methods
-    coeff <- list()
-    for (method in names(methods)) {
-        model <- methods[[method]](subcohort, cohort)
-        coeff[[method]] <- model$coefficients[1]
-    }
-    coeff
+    run_experiment(args$subsampling)
 }
 
 coeff = list()
